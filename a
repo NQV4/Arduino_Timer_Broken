@@ -1,0 +1,231 @@
+//--------------------------------------------------------
+// Timer1 Overflow Interrupt Interval : 1ms       (TIMER1_CNT x DIV / CLK [s])
+// Waveform Generation Mode           : Normal    (WGM1[3:0] = 0000)
+// Clock Freqency (CLK)               : 16 MHz    (0.0625 us)
+// Clock Select   (CLK/DIV)           : CLK / 64  (CS1[2:0] = 011)
+//--------------------------------------------------------
+#define TIMER1_INTERVAL_MS 1  // Timer1 Overflow Interrupt Interval [ms]
+
+
+#define TIMER1_CLK_FREQ_HZ 16000000  // Clock Freqency [Hz]
+#define TIMER1_CLK_SEL 8             // Clock Select (CLK/1, CLK/8, CLK/64, CLK/256, CLK/1024)
+
+
+#define TIMER1_CLK_DIV_HZ TIMER1_CLK_FREQ_HZ / TIMER1_CLK_SEL  // Timer1 Count Clock [Hz]
+#define TIMER1_CNT TIMER1_CLK_DIV_HZ* TIMER1_INTERVAL_MS / 1000
+#define TIMER1_CNT_INIT 65536 - TIMER1_CNT  // Timer1 Count Initial Value
+
+
+//  Function ProtoType
+void Timer1_Init(void);
+
+
+//  Global Variables
+unsigned long cnt_ms;
+unsigned long cnt1ms;
+unsigned long cnt_s;
+
+int mode = 1;
+//1 = stand-by
+//2 = setting
+//4 = counting
+//8 = end
+
+unsigned long now_time = 0;
+
+int button_push_check = 0;
+int button_push_timer = 0;
+int button_push_start = 0;
+int button_push_double_chance = 0;
+int handle_button_end = 1;
+int button_mode = 8;
+//1 = normal-button
+//2 = double-button
+//4 = long-button
+//8 = false-button
+
+unsigned long kitchen_timer = 0;
+
+//------------------------------------------------------------------------------
+//  Interrupt Function
+//------------------------------------------------------------------------------
+ISR(TIMER1_OVF_vect)  // Timer/Counter1 Overflow
+{
+  TCNT1 = TIMER1_CNT_INIT;  //  TCNT1 – Timer/Counter1
+  cnt_ms++;
+  cnt1ms++;
+  if (cnt1ms >= 1000) {
+    cnt1ms = 0;
+    cnt_s++;
+  }
+}
+
+//--------------------------------------------------------
+//  Setup
+//--------------------------------------------------------
+void setup() {
+  Timer1_Init();
+  pinMode(13, OUTPUT);
+  pinMode(2, OUTPUT);
+  pinMode(A0, INPUT);
+  digitalWrite(13, LOW);
+  digitalWrite(2, LOW);
+  Serial.begin(9600);
+}
+
+
+//--------------------------------------------------------
+//  Loop
+//--------------------------------------------------------
+void loop() {
+  // Serial.print("cnt_s: ");
+  // Serial.println(cnt_s);
+  // Serial.print("kitchen_timer: ");
+  // Serial.println(kitchen_timer);
+  // Serial.print("now_time: ");
+  // Serial.println(now_time);
+  // Serial.print("button_mode: ");
+  // Serial.println(button_mode);
+  Serial.print("mode: ");
+  Serial.println(mode);
+  // Serial.print("cnt_ms: ");
+  // Serial.println(cnt_ms);
+  HandleButtonPress();
+
+  switch (button_mode) {
+    case 1: //time ++
+      kitchen_timer += 5;
+      button_mode = 8;
+      digitalWrite(2, HIGH);
+      delay(200);
+      digitalWrite(2, LOW);
+      break;
+    case 2: //timer reset
+      kitchen_timer = 0;
+      button_mode = 8;
+      digitalWrite(13, HIGH);
+      delay(200);
+      digitalWrite(13, LOW);
+      break;
+    case 4: //timer start
+      mode = 4;
+      button_mode = 8;
+      digitalWrite(13, HIGH);
+      digitalWrite(2, HIGH);
+      delay(200);
+      digitalWrite(13, LOW);
+      digitalWrite(2, LOW);
+      break;
+  }
+  switch (mode) {
+    case 1:
+      now_time = cnt_s;
+      digitalWrite(13, LOW);
+      digitalWrite(2, LOW);
+      break;
+    case 2:
+      break;
+    case 4:
+      TimerStart();
+      break;
+    case 8:
+      break;
+  }
+}
+
+void HandleButtonPress() {
+  if (!digitalRead(A0))  //ボタンプッシュ時の初期設定
+  {
+
+    if (button_push_double_chance && !handle_button_end && button_push_check) {   //長押し
+      button_push_check = 0;
+      handle_button_end = 1;
+      button_push_double_chance = 0;
+
+      button_mode = 2;
+    }
+    if (!button_push_check) {
+      button_push_start = cnt_ms;
+      button_push_check = 1;
+    }
+  }
+
+  if (cnt_ms - button_push_start > 1000 && button_push_check && !handle_button_end)  //長押しの検知
+  {
+    button_push_check = 0;
+    handle_button_end = 1;
+    button_push_double_chance = 0;
+
+    button_mode = 4;
+  }
+
+  if (digitalRead(A0) && button_push_check)  //ボタンリリース時のリセット or ダブルクリック処理開始
+  {
+    if (cnt_ms - button_push_start < 250 && !button_push_double_chance && !handle_button_end) {
+      button_push_double_chance = 1;
+    }
+    if (button_push_check && !handle_button_end && cnt_ms - button_push_start >= 250)  //通常クリック
+    {
+      button_push_check = 0;
+      handle_button_end = 1;
+      button_push_double_chance = 0;
+
+      button_mode = 1;
+    }
+    if (!button_push_double_chance && cnt_ms - button_push_start > 250) {
+      button_push_check = 0;
+      button_push_double_chance = 0;
+      handle_button_end = 0;
+    }
+  }
+}
+
+void TimerStart()
+{
+  if(cnt_s - now_time <= kitchen_timer)
+  {
+    
+  }
+  else if(button_mode == 8)
+  {;
+    if (cnt_ms % 500 == 0) {
+      digitalWrite(13, !digitalRead(13));
+      digitalWrite(2, !digitalRead(2));
+      delay(1);
+    }
+  }
+  if(button_mode != 8)
+  {
+    mode = 1;
+    button_mode = 8;
+    kitchen_timer = 0;
+  }
+  
+}
+
+
+//------------------------------------------------------------------------------
+//  Timer 1 Initialize
+//------------------------------------------------------------------------------
+void Timer1_Init(void) {
+  TCCR1A = 0x00;  // TCCR1A – Timer/Counter1 Control Register A
+
+  TCCR1B = 0x00;           // TCCR1B – Timer/Counter1 Control Register B
+#if (TIMER1_CLK_SEL == 1)  //   CS1[2:0] = 001 : clkI/O/1 (no prescaling)        16MHz     (0.0625 us)   16000
+  TCCR1B |= (1 << CS10);
+#elif (TIMER1_CLK_SEL == 8)     //   CS1[2:0] = 010 : clkI/O/8 (from prescaler)       2MHz      (0.5 us)      2000
+  TCCR1B |= (1 << CS11);
+#elif (TIMER1_CLK_SEL == 64)    //   CS1[2:0] = 011 : clkI/O/64 (from prescaler)      250kHz    (4 us)        250
+  TCCR1B |= (1 << CS11) | (1 << CS10);
+#elif (TIMER1_CLK_SEL == 256)   //   CS1[2:0] = 100 : clkI/O/256 (from prescaler)     62.5kHz   (16 us)       62.5
+  TCCR1B |= (1 << CS12);
+#elif (TIMER1_CLK_SEL == 1024)  //   CS1[2:0] = 101 : clkI/O/1024 (from prescaler)    15.625kHz (64 us)       15.625
+  TCCR1B |= (1 << CS12) | (1 << CS10);
+#endif
+
+
+  TCNT1 = TIMER1_CNT_INIT;  // TCNT1 – Timer/Counter1
+
+  TIMSK1 = 0x00;           // TIMSK1 – Timer/Counter1 Interrupt Mask Register
+  TIMSK1 |= (1 << TOIE1);  //  TOIE1: Timer/Counter1, Overflow Interrupt Enable
+}
