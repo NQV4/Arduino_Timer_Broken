@@ -25,26 +25,6 @@ unsigned long cnt_ms;
 unsigned long cnt1ms;
 unsigned long cnt_s;
 
-int mode = 1;
-//1 = stand-by
-//2 = setting
-//4 = counting
-//8 = end
-
-unsigned long now_time = 0;
-
-int button_push_check = 0;
-int button_push_timer = 0;
-int button_push_start = 0;
-int button_push_double_chance = 0;
-int handle_button_end = 1;
-int button_mode = 8;
-//1 = normal-button
-//2 = double-button
-//4 = long-button
-//8 = false-button
-
-unsigned long kitchen_timer = 0;
 
 //------------------------------------------------------------------------------
 //  Interrupt Function
@@ -68,141 +48,100 @@ void setup() {
   pinMode(13, OUTPUT);
   pinMode(2, OUTPUT);
   pinMode(A0, INPUT);
-  digitalWrite(13, LOW);
-  digitalWrite(2, LOW);
   Serial.begin(9600);
 }
 
+
+unsigned long push_from = 0;
+unsigned long pushed_from = 0;
+bool was_push = false;
+unsigned long double_time_over = 200;
+unsigned long long_time_over = 1000;
+int push_mode = 1;
+//1 stanby
+//2 single
+//4 double
+//8 long
 
 //--------------------------------------------------------
 //  Loop
 //--------------------------------------------------------
 void loop() {
-  // Serial.print("cnt_s: ");
-  // Serial.println(cnt_s);
-  // Serial.print("kitchen_timer: ");
-  // Serial.println(kitchen_timer);
-  // Serial.print("now_time: ");
-  // Serial.println(now_time);
-  // Serial.print("button_mode: ");
-  // Serial.println(button_mode);
-  Serial.print("mode: ");
-  Serial.println(mode);
+  handle_button();
+  // Serial.print("push_from: ");
+  // Serial.println(push_from);
   // Serial.print("cnt_ms: ");
   // Serial.println(cnt_ms);
-  HandleButtonPress();
-
-  switch (button_mode) {
-    case 1: //time ++
-      kitchen_timer += 5;
-      button_mode = 8;
-      digitalWrite(2, HIGH);
-      delay(200);
-      digitalWrite(2, LOW);
-      break;
-    case 2: //timer reset
-      kitchen_timer = 0;
-      button_mode = 8;
-      digitalWrite(13, HIGH);
-      delay(200);
-      digitalWrite(13, LOW);
-      break;
-    case 4: //timer start
-      mode = 4;
-      button_mode = 8;
-      digitalWrite(13, HIGH);
-      digitalWrite(2, HIGH);
-      delay(200);
-      digitalWrite(13, LOW);
-      digitalWrite(2, LOW);
-      break;
-  }
-  switch (mode) {
+  // Serial.print("was_push: ");
+  // Serial.println(was_push);
+  // Serial.print("cnt_ms - pushed_from: ");
+  // Serial.println(cnt_ms - pushed_from);
+  // Serial.print("push_mode: ");
+  // Serial.println(push_mode);
+  // Serial.print("pushed_from: ");
+  // Serial.println(pushed_from);
+  switch (push_mode) {
     case 1:
-      now_time = cnt_s;
-      digitalWrite(13, LOW);
       digitalWrite(2, LOW);
+      digitalWrite(13, LOW);
       break;
     case 2:
+      digitalWrite(2, HIGH);
+      delay(300);
       break;
     case 4:
-      TimerStart();
+      digitalWrite(13, HIGH);
+      delay(300);
       break;
     case 8:
+      digitalWrite(2, HIGH);
+      digitalWrite(13, HIGH);
+      delay(300);
       break;
   }
 }
 
-void HandleButtonPress() {
-  if (!digitalRead(A0))  //ボタンプッシュ時の初期設定
-  {
 
-    if (button_push_double_chance && !handle_button_end && button_push_check) {   //長押し
-      button_push_check = 0;
-      handle_button_end = 1;
-      button_push_double_chance = 0;
+void handle_button() {
+  bool pushing = !digitalRead(A0);
 
-      button_mode = 2;
-    }
-    if (!button_push_check) {
-      button_push_start = cnt_ms;
-      button_push_check = 1;
-    }
+  if (push_mode != 1) {
+    was_push = false;
+    push_mode = 1;
+    pushed_from = 0;
   }
 
-  if (cnt_ms - button_push_start > 1000 && button_push_check && !handle_button_end)  //長押しの検知
-  {
-    button_push_check = 0;
-    handle_button_end = 1;
-    button_push_double_chance = 0;
-
-    button_mode = 4;
-  }
-
-  if (digitalRead(A0) && button_push_check)  //ボタンリリース時のリセット or ダブルクリック処理開始
-  {
-    if (cnt_ms - button_push_start < 250 && !button_push_double_chance && !handle_button_end) {
-      button_push_double_chance = 1;
-    }
-    if (button_push_check && !handle_button_end && cnt_ms - button_push_start >= 250)  //通常クリック
-    {
-      button_push_check = 0;
-      handle_button_end = 1;
-      button_push_double_chance = 0;
-
-      button_mode = 1;
-    }
-    if (!button_push_double_chance && cnt_ms - button_push_start > 250) {
-      button_push_check = 0;
-      button_push_double_chance = 0;
-      handle_button_end = 0;
-    }
-  }
-}
-
-void TimerStart()
-{
-  if(cnt_s - now_time <= kitchen_timer)
-  {
+  if (pushing) {
     
-  }
-  else if(button_mode == 8)
-  {;
-    if (cnt_ms % 500 == 0) {
-      digitalWrite(13, !digitalRead(13));
-      digitalWrite(2, !digitalRead(2));
-      delay(1);
+    if (!was_push) {
+      was_push = true;
+      push_from = cnt_ms;
     }
-  }
-  if(button_mode != 8)
-  {
-    mode = 1;
-    button_mode = 8;
-    kitchen_timer = 0;
-  }
-  
-}
 
+    if (cnt_ms - pushed_from < double_time_over && pushed_from != 0 && push_mode == 1) {
+      push_mode = 4;
+    }
+
+    if (cnt_ms - push_from >= long_time_over && push_from != 0 && push_mode == 1) {
+      was_push = false;
+      push_mode = 8;
+    }
+  } 
+  else {
+
+    if (was_push && push_mode == 1) {
+      pushed_from = cnt_ms;
+      was_push = false;
+    }
+
+    if (cnt_ms - pushed_from >= double_time_over && pushed_from != 0 && push_mode == 1) {
+      push_mode = 2;
+
+      pushed_from = 0;
+    }
+
+  }
+}
 
 //------------------------------------------------------------------------------
 //  Timer 1 Initialize
